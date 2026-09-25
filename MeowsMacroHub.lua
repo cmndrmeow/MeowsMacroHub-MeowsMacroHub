@@ -31,6 +31,7 @@ Main.Size = UDim2.fromOffset(420, 330)
 Main.Position = UDim2.new(0.5, -210, 0.5, -165)
 Main.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 Main.BorderSizePixel = 0
+Main.Active = true
 Main.Parent = ScreenGui
 
 local Corner = Instance.new("UICorner")
@@ -44,6 +45,7 @@ Title.Text = "🐱 Meows MacroHub"
 Title.TextColor3 = Color3.new(1, 1, 1)
 Title.TextSize = 20
 Title.Font = Enum.Font.GothamBold
+Title.Active = true
 Title.Parent = Main
 
 local Content = Instance.new("Frame")
@@ -80,7 +82,7 @@ local function CreateToggle(Text, Default, Callback)
     local State = Default
     local Button
 
-    Button = CreateButton(Text .. ": OFF", function()
+    Button = CreateButton(Text .. ": " .. (State and "ON" or "OFF"), function()
         State = not State
         Button.Text = Text .. ": " .. (State and "ON" or "OFF")
         Callback(State)
@@ -214,33 +216,54 @@ CreateButton("Start Macro", StartMacro)
 CreateButton("Stop Macro", StopMacro)
 
 local Dragging = false
-local DragStart
-local StartPosition
+local DragStart = nil
+local StartPosition = nil
 
 Title.InputBegan:Connect(function(Input)
-    if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+    if Input.UserInputType == Enum.UserInputType.MouseButton1
+        or Input.UserInputType == Enum.UserInputType.Touch then
+
         Dragging = true
         DragStart = Input.Position
         StartPosition = Main.Position
     end
 end)
 
-UserInputService.InputChanged:Connect(function(Input)
-    if Dragging and Input.UserInputType == Enum.UserInputType.MouseMovement then
-        local Delta = Input.Position - DragStart
+Title.InputChanged:Connect(function(Input)
+    if Input.UserInputType == Enum.UserInputType.MouseMovement
+        or Input.UserInputType == Enum.UserInputType.Touch then
 
-        Main.Position = UDim2.new(
-            StartPosition.X.Scale,
-            StartPosition.X.Offset + Delta.X,
-            StartPosition.Y.Scale,
-            StartPosition.Y.Offset + Delta.Y
-        )
+        DragStart = DragStart or Input.Position
     end
 end)
 
+UserInputService.InputChanged:Connect(function(Input)
+    if not Dragging then
+        return
+    end
+
+    if Input.UserInputType ~= Enum.UserInputType.MouseMovement
+        and Input.UserInputType ~= Enum.UserInputType.Touch then
+        return
+    end
+
+    local Delta = Input.Position - DragStart
+
+    Main.Position = UDim2.new(
+        StartPosition.X.Scale,
+        StartPosition.X.Offset + Delta.X,
+        StartPosition.Y.Scale,
+        StartPosition.Y.Offset + Delta.Y
+    )
+end)
+
 UserInputService.InputEnded:Connect(function(Input)
-    if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+    if Input.UserInputType == Enum.UserInputType.MouseButton1
+        or Input.UserInputType == Enum.UserInputType.Touch then
+
         Dragging = false
+        DragStart = nil
+        StartPosition = nil
     end
 end)
 
