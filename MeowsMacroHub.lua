@@ -2,14 +2,48 @@ local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
+
+if not RunService:IsClient() then
+    warn("Meows MacroHub: This script must run as a LocalScript on the client.")
+    return
+end
 
 local Player = Players.LocalPlayer
 if not Player then
-    Player = Players.PlayerAdded:Wait()
+    warn("Meows MacroHub: LocalPlayer is not available yet. This script must be placed in a LocalScript.")
+    return
 end
 
-local PlayerGui = Player:WaitForChild("PlayerGui")
-local AbilityRemotes = ReplicatedStorage:FindFirstChild("AbilityRemotes") or ReplicatedStorage:WaitForChild("AbilityRemotes")
+local PlayerGui = Player:WaitForChild("PlayerGui", 10)
+if not PlayerGui then
+    warn("Meows MacroHub: PlayerGui was not found.")
+    return
+end
+
+local function GetAbilityRemotes()
+    local folder = ReplicatedStorage:FindFirstChild("AbilityRemotes")
+    if folder then
+        return folder
+    end
+
+    local ok, result = pcall(function()
+        return ReplicatedStorage:WaitForChild("AbilityRemotes", 10)
+    end)
+
+    if ok and result then
+        return result
+    end
+
+    warn("Meows MacroHub: AbilityRemotes was not found in ReplicatedStorage. Make sure the folder exists and is named exactly 'AbilityRemotes'.")
+    return nil
+end
+
+local AbilityRemotes = GetAbilityRemotes()
+if not AbilityRemotes then
+    warn("Meows MacroHub: Unable to continue because AbilityRemotes is missing.")
+    return
+end
 
 local SaveFileName = "MeowsMacroHub_Config.json"
 local MoveKeys = {"Z", "X", "C", "V", "F"}
