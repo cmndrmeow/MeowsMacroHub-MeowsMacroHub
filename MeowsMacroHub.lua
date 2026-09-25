@@ -320,6 +320,20 @@ local function StopMacro()
     MacroRunning = false
 end
 
+local function RefreshMoveToggles()
+    local SelectedMoves = Config.Moves[Config.SelectedWeapon]
+    if not SelectedMoves then
+        return
+    end
+
+    for Key, Enabled in pairs(SelectedMoves) do
+        local ToggleName = Config.SelectedWeapon .. " " .. Key
+        if ToggleButtons[ToggleName] then
+            UpdateToggleButton(ToggleButtons[ToggleName], Enabled)
+        end
+    end
+end
+
 local function SetWeapon(Weapon)
     if not Config.Moves[Weapon] then
         return
@@ -335,6 +349,8 @@ local function SetWeapon(Weapon)
             Button.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
         end
     end
+
+    RefreshMoveToggles()
 end
 
 local function ToggleMove(Category, Key, State)
