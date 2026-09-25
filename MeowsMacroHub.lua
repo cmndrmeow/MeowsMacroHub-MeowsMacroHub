@@ -125,7 +125,28 @@ local function ExecuteMove(Category, Key)
     task.wait(Config.MoveDelay)
 end
 
-local function ExecuteCombo()
+local function ExecuteCombo(local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local AbilityRemotes = ReplicatedStorage:WaitForChild("AbilityRemotes")
+
+local function ExecuteMove(Category, Key)
+    local CategoryFolder = AbilityRemotes:FindFirstChild(Category)
+
+    if not CategoryFolder then
+        warn("Meows MacroHub: Missing category:", Category)
+        return
+    end
+
+    local Remote = CategoryFolder:FindFirstChild(Key)
+
+    if not Remote or not Remote:IsA("RemoteEvent") then
+        warn("Meows MacroHub: Missing RemoteEvent:", Category, Key)
+        return
+    end
+
+    Remote:FireServer()
+    task.wait(Config.MoveDelay)
+end)
     if MacroRunning then
         return
     end
