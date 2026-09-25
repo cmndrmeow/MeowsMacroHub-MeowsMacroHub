@@ -1,7 +1,9 @@
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Player = Players.LocalPlayer
+local AbilityRemotes = ReplicatedStorage:WaitForChild("AbilityRemotes")
 
 local Config = {
     AutoFarm = false,
@@ -19,6 +21,8 @@ local Config = {
 }
 
 local MacroRunning = false
+
+-- GUI
 
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "MeowsMacroHub"
@@ -73,6 +77,7 @@ Layout.Parent = Scroll
 
 local function CreateButton(Text, Callback)
     local Button = Instance.new("TextButton")
+
     Button.Size = UDim2.new(1, 0, 0, 28)
     Button.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
     Button.BorderSizePixel = 0
@@ -95,17 +100,21 @@ local function CreateToggle(Text, Default, Callback)
     local State = Default
     local Button
 
-    Button = CreateButton(Text .. ": " .. (State and "ON" or "OFF"), function()
-        State = not State
-        Button.Text = Text .. ": " .. (State and "ON" or "OFF")
-        Callback(State)
-    end)
+    Button = CreateButton(
+        Text .. ": " .. (State and "ON" or "OFF"),
+        function()
+            State = not State
+            Button.Text = Text .. ": " .. (State and "ON" or "OFF")
+            Callback(State)
+        end
+    )
 
     return Button
 end
 
 local function CreateSection(Text)
     local Label = Instance.new("TextLabel")
+
     Label.Size = UDim2.new(1, 0, 0, 22)
     Label.BackgroundTransparency = 1
     Label.Text = Text
@@ -116,20 +125,16 @@ local function CreateSection(Text)
     Label.Parent = Scroll
 end
 
+-- REMOTE MOVE EXECUTION
+-- For your own Roblox experience.
+
 local function ExecuteMove(Category, Key)
-    if not Config.Moves[Category][Key] then
+    local CategoryMoves = Config.Moves[Category]
+
+    if not CategoryMoves or not CategoryMoves[Key] then
         return
     end
 
-    print("Meows MacroHub:", Category, Key)
-    task.wait(Config.MoveDelay)
-end
-
-local function ExecuteCombo(local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local AbilityRemotes = ReplicatedStorage:WaitForChild("AbilityRemotes")
-
-local function ExecuteMove(Category, Key)
     local CategoryFolder = AbilityRemotes:FindFirstChild(Category)
 
     if not CategoryFolder then
@@ -140,13 +145,20 @@ local function ExecuteMove(Category, Key)
     local Remote = CategoryFolder:FindFirstChild(Key)
 
     if not Remote or not Remote:IsA("RemoteEvent") then
-        warn("Meows MacroHub: Missing RemoteEvent:", Category, Key)
+        warn(
+            "Meows MacroHub: Missing RemoteEvent:",
+            Category,
+            Key
+        )
         return
     end
 
     Remote:FireServer()
+
     task.wait(Config.MoveDelay)
-end)
+end
+
+local function ExecuteCombo()
     if MacroRunning then
         return
     end
@@ -156,12 +168,17 @@ end)
     local Moves = Config.Moves[Config.SelectedWeapon]
 
     for _, Key in ipairs({"Z", "X", "C", "V", "F"}) do
+        if not MacroRunning then
+            break
+        end
+
         if Moves[Key] then
             ExecuteMove(Config.SelectedWeapon, Key)
         end
     end
 
     task.wait(Config.ComboDelay)
+
     MacroRunning = false
 end
 
@@ -186,7 +203,9 @@ local function StartMacro()
                 end
             end
 
-            task.wait(Config.ComboDelay)
+            if MacroRunning then
+                task.wait(Config.ComboDelay)
+            end
         end
     end)
 end
@@ -207,6 +226,8 @@ local function ToggleMove(Category, Key, State)
     end
 end
 
+-- Combat
+
 CreateSection("Combat")
 
 CreateToggle("Auto Farm", false, function(State)
@@ -216,6 +237,8 @@ end)
 CreateToggle("Fast Attack", false, function(State)
     Config.FastAttack = State
 end)
+
+-- Weapon
 
 CreateSection("Weapon")
 
@@ -235,43 +258,38 @@ CreateButton("Weapon: Gun", function()
     SetWeapon("Gun")
 end)
 
-CreateSection("Melee Moves")
+-- Moves
 
-for _, Key in ipairs({"Z", "X", "C", "V", "F"}) do
-    CreateToggle("Melee " .. Key, false, function(State)
-        ToggleMove("Melee", Key, State)
-    end)
+local Categories = {
+    "Melee",
+    "Fruit",
+    "Sword",
+    "Gun"
+}
+
+for _, Category in ipairs(Categories) do
+    CreateSection(Category .. " Moves")
+
+    for _, Key in ipairs({"Z", "X", "C", "V", "F"}) do
+        CreateToggle(
+            Category .. " " .. Key,
+            false,
+            function(State)
+                ToggleMove(Category, Key, State)
+            end
+        )
+    end
 end
 
-CreateSection("Fruit Moves")
-
-for _, Key in ipairs({"Z", "X", "C", "V", "F"}) do
-    CreateToggle("Fruit " .. Key, false, function(State)
-        ToggleMove("Fruit", Key, State)
-    end)
-end
-
-CreateSection("Sword Moves")
-
-for _, Key in ipairs({"Z", "X", "C", "V", "F"}) do
-    CreateToggle("Sword " .. Key, false, function(State)
-        ToggleMove("Sword", Key, State)
-    end)
-end
-
-CreateSection("Gun Moves")
-
-for _, Key in ipairs({"Z", "X", "C", "V", "F"}) do
-    CreateToggle("Gun " .. Key, false, function(State)
-        ToggleMove("Gun", Key, State)
-    end)
-end
+-- Macro
 
 CreateSection("Macro")
 
 CreateButton("Execute Combo", ExecuteCombo)
 CreateButton("Start Macro", StartMacro)
 CreateButton("Stop Macro", StopMacro)
+
+-- Dragging
 
 local Dragging = false
 local DragStart = nil
