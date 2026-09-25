@@ -3,7 +3,10 @@ local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Player = Players.LocalPlayer
-local AbilityRemotes = ReplicatedStorage:WaitForChild("AbilityRemotes")
+local AbilityRemotes = ReplicatedStorage:FindFirstChild("AbilityRemotes")
+if not AbilityRemotes then
+    AbilityRemotes = ReplicatedStorage:WaitForChild("AbilityRemotes")
+end
 
 local Config = {
     AutoFarm = false,
@@ -145,11 +148,16 @@ local function ExecuteMove(Category, Key)
     local Remote = CategoryFolder:FindFirstChild(Key)
 
     if not Remote or not Remote:IsA("RemoteEvent") then
-        warn("Meows MacroHub: Missing RemoteEvent:", Category, Key)
+        warn(
+            "Meows MacroHub: Missing RemoteEvent:",
+            Category,
+            Key
+        )
         return
     end
 
     Remote:FireServer()
+
     task.wait(Config.MoveDelay)
 end
 
@@ -173,6 +181,7 @@ local function ExecuteCombo()
     end
 
     task.wait(Config.ComboDelay)
+
     MacroRunning = false
 end
 
