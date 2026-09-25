@@ -1,13 +1,20 @@
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
+
+pcall(function()
+    game:GetService("HttpService")
+end)
 
 local Player = Players.LocalPlayer
-local AbilityRemotes = ReplicatedStorage:FindFirstChild("AbilityRemotes")
-if not AbilityRemotes then
-    AbilityRemotes = ReplicatedStorage:WaitForChild("AbilityRemotes")
+if not Player then
+    warn("Meows MacroHub: No LocalPlayer found")
+    return
 end
+
+-- Try to find AbilityRemotes, but don't wait forever
+local AbilityRemotes = ReplicatedStorage:FindFirstChild("AbilityRemotes")
 
 local SaveFileName = "MeowsMacroHub_Config.json"
 
@@ -51,6 +58,10 @@ local function GetEffectiveComboDelay()
 end
 
 local function SaveConfig()
+    if not pcall(game.GetService, game, "HttpService") then
+        return
+    end
+
     local payload = {
         AutoFarm = Config.AutoFarm,
         FastAttack = Config.FastAttack,
@@ -60,6 +71,8 @@ local function SaveConfig()
         Moves = Config.Moves,
     }
 
+    local HttpService = game:GetService("HttpService")
+    
     local success, encoded = pcall(function()
         return HttpService:JSONEncode(payload)
     end)
@@ -83,6 +96,7 @@ local function LoadConfig()
         return false
     end
 
+    local HttpService = game:GetService("HttpService")
     local parsedOk, decoded = pcall(function()
         return HttpService:JSONDecode(raw)
     end)
@@ -130,10 +144,16 @@ end
 
 -- GUI
 
+local PlayerGui = Player:FindFirstChild("PlayerGui")
+if not PlayerGui then
+    warn("Meows MacroHub: No PlayerGui found")
+    return
+end
+
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "MeowsMacroHub"
 ScreenGui.ResetOnSpawn = false
-ScreenGui.Parent = Player:WaitForChild("PlayerGui")
+ScreenGui.Parent = PlayerGui
 
 local Main = Instance.new("Frame")
 Main.Name = "Main"
@@ -235,6 +255,10 @@ end
 -- REMOTE MOVE EXECUTION
 
 local function ExecuteMove(Category, Key)
+    if not AbilityRemotes then
+        return
+    end
+
     local CategoryMoves = Config.Moves[Category]
 
     if not CategoryMoves or not CategoryMoves[Key] then
@@ -244,14 +268,12 @@ local function ExecuteMove(Category, Key)
     local CategoryFolder = AbilityRemotes:FindFirstChild(Category)
 
     if not CategoryFolder then
-        warn("Meows MacroHub: Missing category:", Category)
         return
     end
 
     local Remote = CategoryFolder:FindFirstChild(Key)
 
     if not Remote or not Remote:IsA("RemoteEvent") then
-        warn("Meows MacroHub: Missing RemoteEvent:", Category, Key)
         return
     end
 
