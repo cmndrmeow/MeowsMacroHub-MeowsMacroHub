@@ -14,6 +14,7 @@ local Config = {
     SelectedWeapon = "Melee",
     ComboDelay = 0.25,
     MoveDelay = 0.10,
+    MaxMacroLoop = 0,
 
     Moves = {
         Melee = {Z = false, X = false, C = false, V = false, F = false},
@@ -24,6 +25,15 @@ local Config = {
 }
 
 local MacroRunning = false
+local WeaponButtons = {}
+
+local function GetEffectiveMoveDelay()
+    return Config.FastAttack and 0.04 or Config.MoveDelay
+end
+
+local function GetEffectiveComboDelay()
+    return Config.FastAttack and 0.08 or Config.ComboDelay
+end
 
 -- GUI
 
@@ -157,21 +167,17 @@ local function ExecuteMove(Category, Key)
     end
 
     Remote:FireServer()
-
-    task.wait(Config.MoveDelay)
+    task.wait(GetEffectiveMoveDelay())
 end
 
-local function ExecuteCombo()
-    if MacroRunning then
+local function ExecuteSequence(RepeatLoop)
+    local Moves = Config.Moves[Config.SelectedWeapon]
+    if not Moves then
         return
     end
 
-    MacroRunning = true
-
-    local Moves = Config.Moves[Config.SelectedWeapon]
-
     for _, Key in ipairs({"Z", "X", "C", "V", "F"}) do
-        if not MacroRunning then
+        if not MacroRunning and not RepeatLoop then
             break
         end
 
@@ -179,10 +185,6 @@ local function ExecuteCombo()
             ExecuteMove(Config.SelectedWeapon, Key)
         end
     end
-
-    task.wait(Config.ComboDelay)
-
-    MacroRunning = false
 end
 
 local function StartMacro()
@@ -194,20 +196,10 @@ local function StartMacro()
 
     task.spawn(function()
         while MacroRunning do
-            local Moves = Config.Moves[Config.SelectedWeapon]
-
-            for _, Key in ipairs({"Z", "X", "C", "V", "F"}) do
-                if not MacroRunning then
-                    break
-                end
-
-                if Moves[Key] then
-                    ExecuteMove(Config.SelectedWeapon, Key)
-                end
-            end
+            ExecuteSequence(true)
 
             if MacroRunning then
-                task.wait(Config.ComboDelay)
+                task.wait(GetEffectiveComboDelay())
             end
         end
     end)
@@ -218,8 +210,20 @@ local function StopMacro()
 end
 
 local function SetWeapon(Weapon)
-    if Config.Moves[Weapon] then
-        Config.SelectedWeapon = Weapon
+    if not Config.Moves[Weapon] then
+        return
+    end
+
+    Config.SelectedWeapon = Weapon
+
+    for name, Button in pairs(WeaponButtons) do
+        if name == Weapon then
+            Button.BackgroundColor3 = Color3.fromRGB(82, 128, 255)
+            Button.Text = "Weapon: " .. Weapon
+        else
+            Button.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+            Button.Text = "Weapon: " .. name
+        end
     end
 end
 
@@ -229,12 +233,22 @@ local function ToggleMove(Category, Key, State)
     end
 end
 
+local function ToggleAutoFarm(State)
+    Config.AutoFarm = State
+
+    if State then
+        StartMacro()
+    else
+        StopMacro()
+    end
+end
+
 -- Combat
 
 CreateSection("Combat")
 
 CreateToggle("Auto Farm", false, function(State)
-    Config.AutoFarm = State
+    ToggleAutoFarm(State)
 end)
 
 CreateToggle("Fast Attack", false, function(State)
@@ -245,21 +259,14 @@ end)
 
 CreateSection("Weapon")
 
-CreateButton("Weapon: Melee", function()
-    SetWeapon("Melee")
-end)
+for _, Weapon in ipairs({"Melee", "Fruit", "Sword", "Gun"}) do
+    local Button = CreateButton("Weapon: " .. Weapon, function()
+        SetWeapon(Weapon)
+    end)
+    WeaponButtons[Weapon] = Button
+end
 
-CreateButton("Weapon: Fruit", function()
-    SetWeapon("Fruit")
-end)
-
-CreateButton("Weapon: Sword", function()
-    SetWeapon("Sword")
-end)
-
-CreateButton("Weapon: Gun", function()
-    SetWeapon("Gun")
-end)
+SetWeapon("Melee")
 
 -- Moves
 
@@ -288,7 +295,17 @@ end
 
 CreateSection("Macro")
 
-CreateButton("Execute Combo", ExecuteCombo)
+CreateButton("Execute Combo", function()
+    if MacroRunning then
+        return
+    end
+
+    MacroRunning = true
+    ExecuteSequence(false)
+    task.wait(GetEffectiveComboDelay())
+    MacroRunning = false
+end)
+
 CreateButton("Start Macro", StartMacro)
 CreateButton("Stop Macro", StopMacro)
 
