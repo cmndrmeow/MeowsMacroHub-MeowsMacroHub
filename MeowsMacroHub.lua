@@ -1,11 +1,7 @@
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
-
-pcall(function()
-    game:GetService("HttpService")
-end)
+local HttpService = game:GetService("HttpService")
 
 local Player = Players.LocalPlayer
 if not Player then
@@ -13,10 +9,12 @@ if not Player then
     return
 end
 
--- Try to find AbilityRemotes, but don't wait forever
-local AbilityRemotes = ReplicatedStorage:FindFirstChild("AbilityRemotes")
-
 local SaveFileName = "MeowsMacroHub_Config.json"
+local MoveKeys = {"Z", "X", "C", "V", "F"}
+local WeaponOrder = {"Melee", "Fruit", "Sword", "Gun"}
+
+local AbilityRemotes = ReplicatedStorage:FindFirstChild("AbilityRemotes")
+local PlayerGui = Player:FindFirstChild("PlayerGui")
 
 local function DeepCopy(value)
     if type(value) ~= "table" then
@@ -49,16 +47,8 @@ local MacroRunning = false
 local WeaponButtons = {}
 local ToggleButtons = {}
 
-local function GetEffectiveMoveDelay()
-    return Config.FastAttack and 0.04 or Config.MoveDelay
-end
-
-local function GetEffectiveComboDelay()
-    return Config.FastAttack and 0.08 or Config.ComboDelay
-end
-
 local function SaveConfig()
-    if not pcall(game.GetService, game, "HttpService") then
+    if type(writefile) ~= "function" then
         return
     end
 
@@ -71,8 +61,6 @@ local function SaveConfig()
         Moves = Config.Moves,
     }
 
-    local HttpService = game:GetService("HttpService")
-    
     local success, encoded = pcall(function()
         return HttpService:JSONEncode(payload)
     end)
@@ -88,6 +76,10 @@ local function SaveConfig()
 end
 
 local function LoadConfig()
+    if type(readfile) ~= "function" then
+        return false
+    end
+
     local success, raw = pcall(function()
         return readfile(SaveFileName)
     end)
@@ -96,7 +88,6 @@ local function LoadConfig()
         return false
     end
 
-    local HttpService = game:GetService("HttpService")
     local parsedOk, decoded = pcall(function()
         return HttpService:JSONDecode(raw)
     end)
@@ -108,7 +99,7 @@ local function LoadConfig()
     if type(decoded.Moves) == "table" then
         for Category, MoveSet in pairs(Config.Moves) do
             if type(decoded.Moves[Category]) == "table" then
-                for Key, _ in pairs(MoveSet) do
+                for Key in pairs(MoveSet) do
                     MoveSet[Key] = decoded.Moves[Category][Key] == true
                 end
             end
@@ -142,11 +133,198 @@ local function UpdateToggleButton(ToggleEntry, Value)
     ToggleEntry.Button.Text = ToggleEntry.Label .. ": " .. (Value and "ON" or "OFF")
 end
 
--- GUI
+local function CreateButton(Text, Callback)
+    local Button = Instance.new("TextButton")
+    Button.Size = UDim2.new(1, 0, 0, 28)
+    Button.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    Button.BorderSizePixel = 0
+    Button.Text = Text
+    Button.TextColor3 = Color3.new(1, 1, 1)
+    Button.TextSize = 12
+    Button.Font = Enum.Font.Gotham
 
-local PlayerGui = Player:FindFirstChild("PlayerGui")
+    local Corner = Instance.new("UICorner")
+    Corner.CornerRadius = UDim.new(0, 5)
+    Corner.Parent = Button
+
+    Button.MouseButton1Click:Connect(Callback)
+    return Button
+end
+
+local function CreateToggle(Text, Default, Callback)
+    local State = Default
+    local Button = CreateButton(Text .. ": " .. (State and "ON" or "OFF"), function()
+        State = not State
+        Button.Text = Text .. ": " .. (State and "ON" or "OFF")
+        Callback(State)
+    end)
+
+    return {
+        Label = Text,
+        State = State,
+        Button = Button,
+    }
+end
+
+local function CreateSection(Text)
+    local Label = Instance.new("TextLabel")
+    Label.Size = UDim2.new(1, 0, 0, 22)
+    Label.BackgroundTransparency = 1
+    Label.Text = Text
+    Label.TextColor3 = Color3.fromRGB(200, 200, 200)
+    Label.TextSize = 12
+    Label.Font = Enum.Font.GothamBold
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    return Label
+end
+
+local function GetEffectiveMoveDelay()
+    return Config.FastAttack and 0.04 or Config.MoveDelay
+end
+
+local function GetEffectiveComboDelay()
+    return Config.FastAttack and 0.08 or Config.ComboDelay
+end
+
+local function ExecuteMove(Category, Key)
+    if not AbilityRemotes then
+        return
+    end
+
+    local Moves = Config.Moves[Category]
+    if not Moves or not Moves[Key] then
+        return
+    end
+
+    local CategoryFolder = AbilityRemotes:FindFirstChild(Category)
+    if not CategoryFolder then
+        return
+    end
+
+    local Remote = CategoryFolder:FindFirstChild(Key)
+    if not Remote or not Remote:IsA("RemoteEvent") then
+        return
+    end
+
+    Remote:FireServer()
+    task.wait(GetEffectiveMoveDelay())
+end
+
+local function ExecuteComboOnce()
+    local Moves = Config.Moves[Config.SelectedWeapon]
+    if not Moves then
+        return
+    end
+
+    for _, Key in ipairs(MoveKeys) do
+        if Moves[Key] then
+            ExecuteMove(Config.SelectedWeapon, Key)
+        end
+    end
+end
+
+local function StartMacro()
+    if MacroRunning then
+        return
+    end
+
+    MacroRunning = true
+    task.spawn(function()
+        while MacroRunning do
+            local Moves = Config.Moves[Config.SelectedWeapon]
+            if Moves then
+                for _, Key in ipairs(MoveKeys) do
+                    if not MacroRunning then
+                        break
+                    end
+
+                    if Moves[Key] then
+                        ExecuteMove(Config.SelectedWeapon, Key)
+                    end
+                end
+            end
+
+            if MacroRunning then
+                task.wait(GetEffectiveComboDelay())
+            end
+        end
+    end)
+end
+
+local function StopMacro()
+    MacroRunning = false
+end
+
+local function SetWeapon(Weapon)
+    if not Config.Moves[Weapon] then
+        return
+    end
+
+    Config.SelectedWeapon = Weapon
+    SaveConfig()
+
+    for Name, Button in pairs(WeaponButtons) do
+        if Name == Weapon then
+            Button.BackgroundColor3 = Color3.fromRGB(82, 128, 255)
+        else
+            Button.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+        end
+    end
+end
+
+local function RefreshMoveButtons()
+    for Category, MoveSet in pairs(Config.Moves) do
+        for Key in pairs(MoveSet) do
+            local ToggleName = Category .. " " .. Key
+            if ToggleButtons[ToggleName] then
+                UpdateToggleButton(ToggleButtons[ToggleName], MoveSet[Key])
+            end
+        end
+    end
+end
+
+local function ToggleMove(Category, Key, State)
+    if Config.Moves[Category] then
+        Config.Moves[Category][Key] = State
+        SaveConfig()
+    end
+end
+
+local function ToggleAutoFarm(State)
+    Config.AutoFarm = State
+    if State then
+        StartMacro()
+    else
+        StopMacro()
+    end
+    SaveConfig()
+end
+
+local function ApplySavedState()
+    if ToggleButtons["Auto Farm"] then
+        UpdateToggleButton(ToggleButtons["Auto Farm"], Config.AutoFarm)
+    end
+
+    if ToggleButtons["Fast Attack"] then
+        UpdateToggleButton(ToggleButtons["Fast Attack"], Config.FastAttack)
+    end
+
+    for Category, MoveSet in pairs(Config.Moves) do
+        for Key, Enabled in pairs(MoveSet) do
+            local ToggleName = Category .. " " .. Key
+            if ToggleButtons[ToggleName] then
+                UpdateToggleButton(ToggleButtons[ToggleName], Enabled)
+            end
+        end
+    end
+
+    if WeaponButtons[Config.SelectedWeapon] then
+        SetWeapon(Config.SelectedWeapon)
+    end
+end
+
 if not PlayerGui then
-    warn("Meows MacroHub: No PlayerGui found")
+    warn("Meows MacroHub: PlayerGui not found")
     return
 end
 
@@ -163,10 +341,6 @@ Main.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 Main.BorderSizePixel = 0
 Main.Active = true
 Main.Parent = ScreenGui
-
-local Corner = Instance.new("UICorner")
-Corner.CornerRadius = UDim.new(0, 8)
-Corner.Parent = Main
 
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 35)
@@ -201,275 +375,77 @@ Layout.Padding = UDim.new(0, 4)
 Layout.SortOrder = Enum.SortOrder.LayoutOrder
 Layout.Parent = Scroll
 
-local function CreateButton(Text, Callback)
-    local Button = Instance.new("TextButton")
-
-    Button.Size = UDim2.new(1, 0, 0, 28)
-    Button.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-    Button.BorderSizePixel = 0
-    Button.Text = Text
-    Button.TextColor3 = Color3.new(1, 1, 1)
-    Button.TextSize = 12
-    Button.Font = Enum.Font.Gotham
+local function AddButton(Text, Callback)
+    local Button = CreateButton(Text, Callback)
     Button.Parent = Scroll
-
-    local ButtonCorner = Instance.new("UICorner")
-    ButtonCorner.CornerRadius = UDim.new(0, 5)
-    ButtonCorner.Parent = Button
-
-    Button.MouseButton1Click:Connect(Callback)
-
     return Button
 end
 
-local function CreateToggle(Text, Default, Callback)
-    local State = Default
-    local Button = CreateButton(Text .. ": " .. (State and "ON" or "OFF"), function()
-        State = not State
-        Button.Text = Text .. ": " .. (State and "ON" or "OFF")
-        Callback(State)
-    end)
-
-    local ToggleEntry = {
-        Label = Text,
-        State = State,
-        Button = Button,
-    }
-
-    return ToggleEntry
-end
-
-local function CreateSection(Text)
-    local Label = Instance.new("TextLabel")
-
-    Label.Size = UDim2.new(1, 0, 0, 22)
-    Label.BackgroundTransparency = 1
-    Label.Text = Text
-    Label.TextColor3 = Color3.fromRGB(200, 200, 200)
-    Label.TextSize = 12
-    Label.Font = Enum.Font.GothamBold
-    Label.TextXAlignment = Enum.TextXAlignment.Left
+local function AddSection(Text)
+    local Label = CreateSection(Text)
     Label.Parent = Scroll
+    return Label
 end
 
--- REMOTE MOVE EXECUTION
-
-local function ExecuteMove(Category, Key)
-    if not AbilityRemotes then
-        return
-    end
-
-    local CategoryMoves = Config.Moves[Category]
-
-    if not CategoryMoves or not CategoryMoves[Key] then
-        return
-    end
-
-    local CategoryFolder = AbilityRemotes:FindFirstChild(Category)
-
-    if not CategoryFolder then
-        return
-    end
-
-    local Remote = CategoryFolder:FindFirstChild(Key)
-
-    if not Remote or not Remote:IsA("RemoteEvent") then
-        return
-    end
-
-    Remote:FireServer()
-    task.wait(GetEffectiveMoveDelay())
-end
-
-local function ExecuteSequence(IsLoopMode)
-    local Moves = Config.Moves[Config.SelectedWeapon]
-    if not Moves then
-        return
-    end
-
-    for _, Key in ipairs({"Z", "X", "C", "V", "F"}) do
-        if IsLoopMode and not MacroRunning then
-            break
-        end
-
-        if Moves[Key] then
-            ExecuteMove(Config.SelectedWeapon, Key)
-        end
-    end
-end
-
-local function StartMacro()
-    if MacroRunning then
-        return
-    end
-
-    MacroRunning = true
-
-    task.spawn(function()
-        while MacroRunning do
-            ExecuteSequence(true)
-
-            if MacroRunning then
-                task.wait(GetEffectiveComboDelay())
-            end
-        end
-    end)
-end
-
-local function StopMacro()
-    MacroRunning = false
-end
-
-local function RefreshMoveToggles()
-    local SelectedMoves = Config.Moves[Config.SelectedWeapon]
-    if not SelectedMoves then
-        return
-    end
-
-    for Key, Enabled in pairs(SelectedMoves) do
-        local ToggleName = Config.SelectedWeapon .. " " .. Key
-        if ToggleButtons[ToggleName] then
-            UpdateToggleButton(ToggleButtons[ToggleName], Enabled)
-        end
-    end
-end
-
-local function SetWeapon(Weapon)
-    if not Config.Moves[Weapon] then
-        return
-    end
-
-    Config.SelectedWeapon = Weapon
-    SaveConfig()
-
-    for Name, Button in pairs(WeaponButtons) do
-        if Name == Weapon then
-            Button.BackgroundColor3 = Color3.fromRGB(82, 128, 255)
-        else
-            Button.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-        end
-    end
-
-    RefreshMoveToggles()
-end
-
-local function ToggleMove(Category, Key, State)
-    if Config.Moves[Category] then
-        Config.Moves[Category][Key] = State
-        SaveConfig()
-    end
-end
-
-local function ToggleAutoFarm(State)
-    Config.AutoFarm = State
-
-    if State then
-        StartMacro()
-    else
-        StopMacro()
-    end
-
-    SaveConfig()
-end
-
-local function ApplyLoadedState()
-    if ToggleButtons["Auto Farm"] then
-        UpdateToggleButton(ToggleButtons["Auto Farm"], Config.AutoFarm)
-    end
-
-    if ToggleButtons["Fast Attack"] then
-        UpdateToggleButton(ToggleButtons["Fast Attack"], Config.FastAttack)
-    end
-
-    for Category, MoveSet in pairs(Config.Moves) do
-        for Key, Enabled in pairs(MoveSet) do
-            local ToggleName = Category .. " " .. Key
-            if ToggleButtons[ToggleName] then
-                UpdateToggleButton(ToggleButtons[ToggleName], Enabled)
-            end
-        end
-    end
-
-    if WeaponButtons[Config.SelectedWeapon] then
-        SetWeapon(Config.SelectedWeapon)
-    end
-end
-
--- Combat
-
-CreateSection("Combat")
-
+AddSection("Combat")
 ToggleButtons["Auto Farm"] = CreateToggle("Auto Farm", Config.AutoFarm, function(State)
     ToggleAutoFarm(State)
 end)
+ToggleButtons["Auto Farm"].Button.Parent = Scroll
 
 ToggleButtons["Fast Attack"] = CreateToggle("Fast Attack", Config.FastAttack, function(State)
     Config.FastAttack = State
     SaveConfig()
 end)
+ToggleButtons["Fast Attack"].Button.Parent = Scroll
 
--- Weapon
-
-CreateSection("Weapon")
-
-for _, Weapon in ipairs({"Melee", "Fruit", "Sword", "Gun"}) do
-    local Button = CreateButton("Weapon: " .. Weapon, function()
+AddSection("Weapon")
+for _, Weapon in ipairs(WeaponOrder) do
+    local Button = AddButton("Weapon: " .. Weapon, function()
         SetWeapon(Weapon)
     end)
     WeaponButtons[Weapon] = Button
 end
-
 SetWeapon(Config.SelectedWeapon)
 
--- Moves
-
-local Categories = {"Melee", "Fruit", "Sword", "Gun"}
-
-for _, Category in ipairs(Categories) do
-    CreateSection(Category .. " Moves")
-
-    for _, Key in ipairs({"Z", "X", "C", "V", "F"}) do
+for _, Category in ipairs(WeaponOrder) do
+    AddSection(Category .. " Moves")
+    for _, Key in ipairs(MoveKeys) do
         local ToggleEntry = CreateToggle(Category .. " " .. Key, Config.Moves[Category][Key], function(State)
             ToggleMove(Category, Key, State)
         end)
-
         ToggleButtons[Category .. " " .. Key] = ToggleEntry
+        ToggleEntry.Button.Parent = Scroll
     end
 end
 
--- Macro
-
-CreateSection("Macro")
-
-CreateButton("Execute Combo", function()
+AddSection("Macro")
+AddButton("Execute Combo", function()
     if MacroRunning then
         return
     end
 
     MacroRunning = true
-    ExecuteSequence(false)
+    ExecuteComboOnce()
     task.wait(GetEffectiveComboDelay())
     MacroRunning = false
 end)
-
-CreateButton("Start Macro", StartMacro)
-CreateButton("Stop Macro", StopMacro)
-CreateButton("Save Config", SaveConfig)
-CreateButton("Load Config", function()
+AddButton("Start Macro", StartMacro)
+AddButton("Stop Macro", StopMacro)
+AddButton("Save Config", SaveConfig)
+AddButton("Load Config", function()
     if LoadConfig() then
-        ApplyLoadedState()
+        ApplySavedState()
     else
         warn("Meows MacroHub: No saved config found")
     end
 end)
 
--- Load saved config
-
 if LoadConfig() then
-    ApplyLoadedState()
+    ApplySavedState()
 end
 
--- Dragging
+RefreshMoveButtons()
 
 local Dragging = false
 local DragStart = nil
@@ -493,7 +469,6 @@ UserInputService.InputChanged:Connect(function(Input)
     end
 
     local Delta = Input.Position - DragStart
-
     Main.Position = UDim2.new(
         StartPosition.X.Scale,
         StartPosition.X.Offset + Delta.X,
