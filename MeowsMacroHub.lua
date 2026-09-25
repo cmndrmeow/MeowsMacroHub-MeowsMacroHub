@@ -3,24 +3,10 @@ local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Player = Players.LocalPlayer
-if not Player then
-    warn("Meows MacroHub: LocalPlayer is unavailable.")
-    return
-end
-
-local PlayerGui = Player:FindFirstChild("PlayerGui")
-if not PlayerGui then
-    warn("Meows MacroHub: PlayerGui not found.")
-    return
-end
-
+local PlayerGui = Player:WaitForChild("PlayerGui")
 local AbilityRemotes = ReplicatedStorage:FindFirstChild("AbilityRemotes")
 if not AbilityRemotes then
-    warn(
-        "Meows MacroHub: Missing ReplicatedStorage.AbilityRemotes. Create:\n" ..
-        "ReplicatedStorage > AbilityRemotes > Melee/Fruit/Sword/Gun > Z/X/C/V/F (RemoteEvents)"
-    )
-    return
+    AbilityRemotes = ReplicatedStorage:WaitForChild("AbilityRemotes")
 end
 
 local SaveFileName = "MeowsMacroHub_Config.json"
@@ -33,8 +19,8 @@ local function DeepCopy(value)
     end
 
     local copy = {}
-    for key, item in pairs(value) do
-        copy[key] = DeepCopy(item)
+    for k, v in pairs(value) do
+        copy[k] = DeepCopy(v)
     end
     return copy
 end
@@ -49,8 +35,8 @@ local DefaultConfig = {
         Melee = {Z = false, X = false, C = false, V = false, F = false},
         Fruit = {Z = false, X = false, C = false, V = false, F = false},
         Sword = {Z = false, X = false, C = false, V = false, F = false},
-        Gun = {Z = false, X = false, C = false, V = false, F = false},
-    },
+        Gun   = {Z = false, X = false, C = false, V = false, F = false},
+    }
 }
 
 local Config = DeepCopy(DefaultConfig)
@@ -89,7 +75,7 @@ local function SaveConfig()
     end)
 
     if not success then
-        warn("Meows MacroHub: Failed to encode config.")
+        warn("Meows MacroHub: failed to encode config")
         return
     end
 
@@ -105,19 +91,19 @@ local function LoadConfig()
         return false
     end
 
-    local success, raw = pcall(function()
+    local ok, raw = pcall(function()
         return readfile(SaveFileName)
     end)
 
-    if not success or not raw then
+    if not ok or not raw then
         return false
     end
 
-    local ok, HttpService = pcall(function()
+    local ok2, HttpService = pcall(function()
         return game:GetService("HttpService")
     end)
 
-    if not ok or type(HttpService) ~= "table" then
+    if not ok2 or type(HttpService) ~= "table" then
         return false
     end
 
@@ -130,10 +116,10 @@ local function LoadConfig()
     end
 
     if type(decoded.Moves) == "table" then
-        for Category, MoveSet in pairs(Config.Moves) do
-            if type(decoded.Moves[Category]) == "table" then
-                for Key in pairs(MoveSet) do
-                    MoveSet[Key] = decoded.Moves[Category][Key] == true
+        for category, moveSet in pairs(Config.Moves) do
+            if type(decoded.Moves[category]) == "table" then
+                for key in pairs(moveSet) do
+                    moveSet[key] = decoded.Moves[category][key] == true
                 end
             end
         end
@@ -219,11 +205,13 @@ local function ExecuteMove(Category, Key)
 
     local CategoryFolder = AbilityRemotes:FindFirstChild(Category)
     if not CategoryFolder then
+        warn("Meows MacroHub: Missing category:", Category)
         return
     end
 
     local Remote = CategoryFolder:FindFirstChild(Key)
     if not Remote or not Remote:IsA("RemoteEvent") then
+        warn("Meows MacroHub: Missing RemoteEvent:", Category, Key)
         return
     end
 
@@ -250,6 +238,7 @@ local function StartMacro()
     end
 
     MacroRunning = true
+
     task.spawn(function()
         while MacroRunning do
             local Moves = Config.Moves[Config.SelectedWeapon]
@@ -289,17 +278,6 @@ local function SetWeapon(Weapon)
             Button.BackgroundColor3 = Color3.fromRGB(82, 128, 255)
         else
             Button.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-        end
-    end
-end
-
-local function RefreshMoveButtons()
-    for Category, MoveSet in pairs(Config.Moves) do
-        for Key in pairs(MoveSet) do
-            local ToggleName = Category .. " " .. Key
-            if ToggleButtons[ToggleName] then
-                UpdateToggleButton(ToggleButtons[ToggleName], MoveSet[Key])
-            end
         end
     end
 end
@@ -458,15 +436,13 @@ AddButton("Load Config", function()
     if LoadConfig() then
         ApplySavedState()
     else
-        warn("Meows MacroHub: No saved config found.")
+        warn("Meows MacroHub: no saved config found")
     end
 end)
 
 if LoadConfig() then
     ApplySavedState()
 end
-
-RefreshMoveButtons()
 
 local Dragging = false
 local DragStart = nil
@@ -489,12 +465,12 @@ UserInputService.InputChanged:Connect(function(Input)
         return
     end
 
-    local delta = Input.Position - DragStart
+    local Delta = Input.Position - DragStart
     Main.Position = UDim2.new(
         StartPosition.X.Scale,
-        StartPosition.X.Offset + delta.X,
+        StartPosition.X.Offset + Delta.X,
         StartPosition.Y.Scale,
-        StartPosition.Y.Offset + delta.Y
+        StartPosition.Y.Offset + Delta.Y
     )
 end)
 
