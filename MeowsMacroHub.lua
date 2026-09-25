@@ -1,20 +1,31 @@
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local HttpService = game:GetService("HttpService")
 
 local Player = Players.LocalPlayer
 if not Player then
-    warn("Meows MacroHub: No LocalPlayer found")
+    warn("Meows MacroHub: LocalPlayer is unavailable.")
+    return
+end
+
+local PlayerGui = Player:FindFirstChild("PlayerGui")
+if not PlayerGui then
+    warn("Meows MacroHub: PlayerGui not found.")
+    return
+end
+
+local AbilityRemotes = ReplicatedStorage:FindFirstChild("AbilityRemotes")
+if not AbilityRemotes then
+    warn(
+        "Meows MacroHub: Missing ReplicatedStorage.AbilityRemotes. Create:\n" ..
+        "ReplicatedStorage > AbilityRemotes > Melee/Fruit/Sword/Gun > Z/X/C/V/F (RemoteEvents)"
+    )
     return
 end
 
 local SaveFileName = "MeowsMacroHub_Config.json"
 local MoveKeys = {"Z", "X", "C", "V", "F"}
 local WeaponOrder = {"Melee", "Fruit", "Sword", "Gun"}
-
-local AbilityRemotes = ReplicatedStorage:FindFirstChild("AbilityRemotes")
-local PlayerGui = Player:FindFirstChild("PlayerGui")
 
 local function DeepCopy(value)
     if type(value) ~= "table" then
@@ -38,8 +49,8 @@ local DefaultConfig = {
         Melee = {Z = false, X = false, C = false, V = false, F = false},
         Fruit = {Z = false, X = false, C = false, V = false, F = false},
         Sword = {Z = false, X = false, C = false, V = false, F = false},
-        Gun = {Z = false, X = false, C = false, V = false, F = false}
-    }
+        Gun = {Z = false, X = false, C = false, V = false, F = false},
+    },
 }
 
 local Config = DeepCopy(DefaultConfig)
@@ -47,8 +58,20 @@ local MacroRunning = false
 local WeaponButtons = {}
 local ToggleButtons = {}
 
+local function GetEffectiveMoveDelay()
+    return Config.FastAttack and 0.04 or Config.MoveDelay
+end
+
+local function GetEffectiveComboDelay()
+    return Config.FastAttack and 0.08 or Config.ComboDelay
+end
+
 local function SaveConfig()
-    if type(writefile) ~= "function" then
+    local ok, HttpService = pcall(function()
+        return game:GetService("HttpService")
+    end)
+
+    if not ok or type(HttpService) ~= "table" then
         return
     end
 
@@ -66,13 +89,15 @@ local function SaveConfig()
     end)
 
     if not success then
-        warn("Meows MacroHub: Failed to encode config")
+        warn("Meows MacroHub: Failed to encode config.")
         return
     end
 
-    pcall(function()
-        writefile(SaveFileName, encoded)
-    end)
+    if type(writefile) == "function" then
+        pcall(function()
+            writefile(SaveFileName, encoded)
+        end)
+    end
 end
 
 local function LoadConfig()
@@ -85,6 +110,14 @@ local function LoadConfig()
     end)
 
     if not success or not raw then
+        return false
+    end
+
+    local ok, HttpService = pcall(function()
+        return game:GetService("HttpService")
+    end)
+
+    if not ok or type(HttpService) ~= "table" then
         return false
     end
 
@@ -178,21 +211,9 @@ local function CreateSection(Text)
     return Label
 end
 
-local function GetEffectiveMoveDelay()
-    return Config.FastAttack and 0.04 or Config.MoveDelay
-end
-
-local function GetEffectiveComboDelay()
-    return Config.FastAttack and 0.08 or Config.ComboDelay
-end
-
 local function ExecuteMove(Category, Key)
-    if not AbilityRemotes then
-        return
-    end
-
-    local Moves = Config.Moves[Category]
-    if not Moves or not Moves[Key] then
+    local CategoryMoves = Config.Moves[Category]
+    if not CategoryMoves or not CategoryMoves[Key] then
         return
     end
 
@@ -323,11 +344,6 @@ local function ApplySavedState()
     end
 end
 
-if not PlayerGui then
-    warn("Meows MacroHub: PlayerGui not found")
-    return
-end
-
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "MeowsMacroHub"
 ScreenGui.ResetOnSpawn = false
@@ -341,6 +357,10 @@ Main.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 Main.BorderSizePixel = 0
 Main.Active = true
 Main.Parent = ScreenGui
+
+local Corner = Instance.new("UICorner")
+Corner.CornerRadius = UDim.new(0, 8)
+Corner.Parent = Main
 
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 35)
@@ -430,6 +450,7 @@ AddButton("Execute Combo", function()
     task.wait(GetEffectiveComboDelay())
     MacroRunning = false
 end)
+
 AddButton("Start Macro", StartMacro)
 AddButton("Stop Macro", StopMacro)
 AddButton("Save Config", SaveConfig)
@@ -437,7 +458,7 @@ AddButton("Load Config", function()
     if LoadConfig() then
         ApplySavedState()
     else
-        warn("Meows MacroHub: No saved config found")
+        warn("Meows MacroHub: No saved config found.")
     end
 end)
 
@@ -468,12 +489,12 @@ UserInputService.InputChanged:Connect(function(Input)
         return
     end
 
-    local Delta = Input.Position - DragStart
+    local delta = Input.Position - DragStart
     Main.Position = UDim2.new(
         StartPosition.X.Scale,
-        StartPosition.X.Offset + Delta.X,
+        StartPosition.X.Offset + delta.X,
         StartPosition.Y.Scale,
-        StartPosition.Y.Offset + Delta.Y
+        StartPosition.Y.Offset + delta.Y
     )
 end)
 
