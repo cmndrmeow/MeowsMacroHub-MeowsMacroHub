@@ -1,13 +1,15 @@
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
 
 local Player = Players.LocalPlayer
-local PlayerGui = Player:WaitForChild("PlayerGui")
-local AbilityRemotes = ReplicatedStorage:FindFirstChild("AbilityRemotes")
-if not AbilityRemotes then
-    AbilityRemotes = ReplicatedStorage:WaitForChild("AbilityRemotes")
+if not Player then
+    Player = Players.PlayerAdded:Wait()
 end
+
+local PlayerGui = Player:WaitForChild("PlayerGui")
+local AbilityRemotes = ReplicatedStorage:FindFirstChild("AbilityRemotes") or ReplicatedStorage:WaitForChild("AbilityRemotes")
 
 local SaveFileName = "MeowsMacroHub_Config.json"
 local MoveKeys = {"Z", "X", "C", "V", "F"}
@@ -19,8 +21,8 @@ local function DeepCopy(value)
     end
 
     local copy = {}
-    for k, v in pairs(value) do
-        copy[k] = DeepCopy(v)
+    for key, nestedValue in pairs(value) do
+        copy[key] = DeepCopy(nestedValue)
     end
     return copy
 end
@@ -52,15 +54,55 @@ local function GetEffectiveComboDelay()
     return Config.FastAttack and 0.08 or Config.ComboDelay
 end
 
-local function SaveConfig()
-    local ok, HttpService = pcall(function()
-        return game:GetService("HttpService")
-    end)
-
-    if not ok or type(HttpService) ~= "table" then
-        return
+local function SafeReadFile(fileName)
+    if type(readfile) ~= "function" then
+        return nil
     end
 
+    local success, result = pcall(function()
+        return readfile(fileName)
+    end)
+
+    if not success then
+        return nil
+    end
+
+    return result
+end
+
+local function SafeWriteFile(fileName, content)
+    if type(writefile) ~= "function" then
+        return false
+    end
+
+    local success = pcall(function()
+        writefile(fileName, content)
+    end)
+
+    return success
+end
+
+local function ValidateMovesTable(source)
+    if type(source) ~= "table" then
+        return false
+    end
+
+    for _, weapon in ipairs(WeaponOrder) do
+        if type(source[weapon]) ~= "table" then
+            return false
+        end
+
+        for _, key in ipairs(MoveKeys) do
+            if type(source[weapon][key]) ~= "boolean" then
+                source[weapon][key] = false
+            end
+        end
+    end
+
+    return true
+end
+
+local function SaveConfig()
     local payload = {
         AutoFarm = Config.AutoFarm,
         FastAttack = Config.FastAttack,
@@ -74,52 +116,33 @@ local function SaveConfig()
         return HttpService:JSONEncode(payload)
     end)
 
-    if not success then
+    if not success or type(encoded) ~= "string" then
         warn("Meows MacroHub: failed to encode config")
-        return
+        return false
     end
 
-    if type(writefile) == "function" then
-        pcall(function()
-            writefile(SaveFileName, encoded)
-        end)
-    end
+    return SafeWriteFile(SaveFileName, encoded)
 end
 
 local function LoadConfig()
-    if type(readfile) ~= "function" then
+    local raw = SafeReadFile(SaveFileName)
+    if not raw then
         return false
     end
 
-    local ok, raw = pcall(function()
-        return readfile(SaveFileName)
-    end)
-
-    if not ok or not raw then
-        return false
-    end
-
-    local ok2, HttpService = pcall(function()
-        return game:GetService("HttpService")
-    end)
-
-    if not ok2 or type(HttpService) ~= "table" then
-        return false
-    end
-
-    local parsedOk, decoded = pcall(function()
+    local success, decoded = pcall(function()
         return HttpService:JSONDecode(raw)
     end)
 
-    if not parsedOk or type(decoded) ~= "table" then
+    if not success or type(decoded) ~= "table" then
         return false
     end
 
-    if type(decoded.Moves) == "table" then
-        for category, moveSet in pairs(Config.Moves) do
-            if type(decoded.Moves[category]) == "table" then
-                for key in pairs(moveSet) do
-                    moveSet[key] = decoded.Moves[category][key] == true
+    if type(decoded.Moves) == "table" and ValidateMovesTable(decoded.Moves) then
+        for weapon, moveSet in pairs(Config.Moves) do
+            if type(decoded.Moves[weapon]) == "table" then
+                for _, key in ipairs(MoveKeys) do
+                    moveSet[key] = decoded.Moves[weapon][key] == true
                 end
             end
         end
@@ -132,11 +155,11 @@ local function LoadConfig()
         Config.SelectedWeapon = decoded.SelectedWeapon
     end
 
-    if type(decoded.ComboDelay) == "number" then
+    if type(decoded.ComboDelay) == "number" and decoded.ComboDelay >= 0 then
         Config.ComboDelay = decoded.ComboDelay
     end
 
-    if type(decoded.MoveDelay) == "number" then
+    if type(decoded.MoveDelay) == "number" and decoded.MoveDelay >= 0 then
         Config.MoveDelay = decoded.MoveDelay
     end
 
@@ -161,21 +184,29 @@ local function CreateButton(Text, Callback)
     Button.TextColor3 = Color3.new(1, 1, 1)
     Button.TextSize = 12
     Button.Font = Enum.Font.Gotham
+    Button.AutoButtonColor = false
 
     local Corner = Instance.new("UICorner")
     Corner.CornerRadius = UDim.new(0, 5)
     Corner.Parent = Button
 
-    Button.MouseButton1Click:Connect(Callback)
+    Button.MouseButton1Click:Connect(function()
+        if Callback then
+            Callback()
+        end
+    end)
+
     return Button
 end
 
 local function CreateToggle(Text, Default, Callback)
-    local State = Default
+    local State = Default == true
     local Button = CreateButton(Text .. ": " .. (State and "ON" or "OFF"), function()
         State = not State
         Button.Text = Text .. ": " .. (State and "ON" or "OFF")
-        Callback(State)
+        if Callback then
+            Callback(State)
+        end
     end)
 
     return {
@@ -215,8 +246,13 @@ local function ExecuteMove(Category, Key)
         return
     end
 
-    Remote:FireServer()
-    task.wait(GetEffectiveMoveDelay())
+    local success = pcall(function()
+        Remote:FireServer()
+    end)
+
+    if success then
+        task.wait(GetEffectiveMoveDelay())
+    end
 end
 
 local function ExecuteComboOnce()
@@ -325,6 +361,7 @@ end
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "MeowsMacroHub"
 ScreenGui.ResetOnSpawn = false
+ScreenGui.IgnoreGuiInset = true
 ScreenGui.Parent = PlayerGui
 
 local Main = Instance.new("Frame")
@@ -442,6 +479,10 @@ end)
 
 if LoadConfig() then
     ApplySavedState()
+end
+
+if Config.AutoFarm then
+    StartMacro()
 end
 
 local Dragging = false
